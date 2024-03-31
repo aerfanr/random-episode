@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -23,15 +24,24 @@ type Stage int
 const (
 	Menu Stage = iota
 	AddSeries
-	Episode
+	Result
 )
+
+type Episode struct {
+	season int
+	episode int
+	number int
+}
 
 type model struct {
 	stage   Stage
 	message string
 	inputSeries Series
+	series []Series
 	choices []string
 	cursor  int
+	selected int
+	episode Episode
 	textInput textinput.Model
 }
 
@@ -64,6 +74,36 @@ func (s Series) save() error {
 	}
 
 	return nil
+}
+
+func (s Series) getEpisode() (Episode, error) {
+	for i := 0; i < 5; i++ {
+		n := rand.Intn(s.episodeCount)
+
+		stmt := `SELECT number FROM episodes WHERE series = ? AND number = ? AND watched = 1;`
+		rows := db.QueryRow(stmt, s.name, n)
+		if rows.Scan() == sql.ErrNoRows {
+			m := n
+			for j, l := range s.seasonLengths {
+				if m < l {
+					return Episode{
+						season: j + 1,
+						episode: m + 1,
+						number: n,
+					}, nil
+				}
+				m -= l
+			}
+		}
+	}
+
+	return Episode{}, fmt.Errorf("No episode found")
+}
+
+func (s Series) watchEpisode(e Episode) error {
+	stmt := `INSERT INTO episodes (series, number, watched) VALUES (?, ?, 1);`
+	_, err := db.Exec(stmt, s.name, e.number)
+	return err
 }
 
 func seriesFromRow(rows *sql.Rows) (Series, error) {
@@ -109,6 +149,13 @@ func connectDB() tea.Msg {
 
 	stmt := `CREATE TABLE IF NOT EXISTS series
 	(name text, season_lengths text);`
+	_, err = db.Exec(stmt)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stmt = `CREATE TABLE IF NOT EXISTS episodes
+	(series text, number int, watched int);`
 	_, err = db.Exec(stmt)
 	if err != nil {
 		log.Fatal(err)
@@ -192,8 +239,11 @@ func handleSeriesInput(m *model) {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var err error
+
 	switch msg := msg.(type) {
 	case dbLoadMsg:
+		m.series = msg.series
 		for _, series := range msg.series {
 			m.choices = append(m.choices, series.name)
 		}
@@ -226,7 +276,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.message = "Show name: "
 					m.stage = AddSeries
 				} else {
-					return m, tea.Quit
+					m.selected = m.cursor - 1
+					m.episode, err = m.series[m.selected].getEpisode()
+					if err != nil {
+						log.Println(err)
+					}
+					m.message = fmt.Sprintf(
+						"Season %d, episode %d",
+						m.episode.season,
+						m.episode.episode,
+					)
+					m.stage = Result
+					m.cursor = 0
 				}
 			}
 
@@ -235,7 +296,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				handleSeriesInput(&m)
 			}
+
+		case Result:
+			switch msg.String() {
+			case "j", "down":
+				m.cursor = (m.cursor + 1) % 2
+			case "k", "up":
+				m.cursor = (m.cursor + 1) % 2
+			case "q":
+				return m, tea.Quit
+			case "enter":
+				if m.cursor == 0 {
+					m.series[m.selected].watchEpisode(m.episode)
+				}
+				m.message = "What do you want to do?"
+				m.stage = Menu
+			}
 		}
+
 	}
 
 	if m.stage == AddSeries {
@@ -265,6 +343,15 @@ func (m model) View() string {
 
 	case AddSeries:
 		s += m.textInput.View()
+
+	case Result:
+		for i, choice := range []string{"Watched", "Later"} {
+			cursor := " "
+			if m.cursor == i {
+				cursor = ">"
+			}
+			s += fmt.Sprintf("%s %s\n", cursor, choice)
+		}
 	}
 
 	return s
@@ -273,7 +360,7 @@ func (m model) View() string {
 func main() {
 	defer closeDB()
 
-	tea.LogToFile("/tmp/random-series.log", "")
+	tea.LogToFile("/tmp/random-episode.log", "")
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
