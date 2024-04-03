@@ -25,10 +25,23 @@ type menuModel struct {
 	cursor  int
 }
 
-func newMenu() menuModel {
+func newMenu(s []Show) menuModel {
+	choices := []string{"Add show"}
+	if len(s) == 0 {
+		choices = []string{"Add show ha", "ha ha"}
+	}
+	for _, show := range s {
+		choices = append(choices, show.name)
+	}
+
+	cursor := 1
+	if len(s) == 0 {
+		cursor = 0
+	}
+
 	return menuModel{
-		choices: []string{"Add show"},
-		cursor:  0,
+		choices: choices,
+		cursor:  cursor,
 	}
 }
 
@@ -101,18 +114,18 @@ func (m *addModel) Update(g *globalModel, msg tea.Msg) tea.Cmd {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":
-			m.handleShowInput(g)
+			cmd = m.handleShowInput(g)
 		}
 	}
 
 	return cmd
 }
 
-func (m *addModel) handleShowInput(g *globalModel) {
+func (m *addModel) handleShowInput(g *globalModel) tea.Cmd {
 	var err error
 
 	if m.textInput.Value() == "" {
-		return
+		return nil
 	}
 
 	if m.show.name == "" {
@@ -122,14 +135,14 @@ func (m *addModel) handleShowInput(g *globalModel) {
 	} else if m.show.seasonCount == 0 {
 		m.show.seasonCount, err = strconv.Atoi(m.textInput.Value())
 		if err != nil {
-			return
+			return nil
 		}
 		m.message = fmt.Sprintf("Season 1 length: ")
 
 	} else if len(m.show.seasonLengths) < m.show.seasonCount {
 		l, err := strconv.Atoi(m.textInput.Value())
 		if err != nil {
-			return
+			return nil
 		}
 
 		m.show.seasonLengths = append(m.show.seasonLengths, l)
@@ -137,15 +150,18 @@ func (m *addModel) handleShowInput(g *globalModel) {
 			err = m.show.save()
 			if err != nil {
 				log.Fatal(err)
-				return
+				return nil
 			}
 			g.stageModel = g.menu
+			return readShows
 		} else {
 			m.message = fmt.Sprintf("Season %d length: ", len(m.show.seasonLengths)+1)
 		}
 	}
 
 	m.textInput.Reset()
+
+	return nil
 }
 
 func (m *addModel) View() string {
@@ -213,12 +229,12 @@ func (m *resultModel) View() string {
 	return s
 }
 
-type dbLoadMsg struct {
+type showsLoaded struct {
 	shows []Show
 }
 
 func initialModel() globalModel {
-	menu := newMenu()
+	menu := newMenu([]Show{})
 
 	return globalModel{
 		stageModel: &menu,
@@ -234,14 +250,11 @@ func (m globalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd = nil
 
 	switch msg := msg.(type) {
-	case dbLoadMsg:
+	case showsLoaded:
 		m.shows = msg.shows
-		for _, show := range msg.shows {
-			m.menu.choices = append(m.menu.choices, show.name)
-		}
-		if len(m.menu.choices) > 1 {
-			m.menu.cursor = 1
-		}
+		menu := newMenu(m.shows)
+		m.menu = &menu
+		m.stageModel = m.menu
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {

@@ -138,7 +138,11 @@ func connectDB() tea.Msg {
 		log.Fatal(err)
 	}
 
-	stmt = `SELECT name, season_lengths FROM series;`
+	return readShows()
+}
+
+func readShows() tea.Msg {
+	stmt := `SELECT name, season_lengths FROM series;`
 	rows, err := db.Query(stmt)
 	if err != nil {
 		log.Fatal(err)
@@ -153,7 +157,7 @@ func connectDB() tea.Msg {
 		shows = append(shows, s)
 	}
 
-	return dbLoadMsg{
+	return showsLoaded{
 		shows: shows,
 	}
 }
