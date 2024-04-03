@@ -124,21 +124,48 @@ func connectDB() tea.Msg {
 		log.Fatal(err)
 	}
 
-	stmt := `CREATE TABLE IF NOT EXISTS series
-	(name text, season_lengths text);`
-	_, err = db.Exec(stmt)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	stmt = `CREATE TABLE IF NOT EXISTS episodes
-	(series text, number int, watched int);`
-	_, err = db.Exec(stmt)
+	err = alterDB()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return readShows()
+}
+
+// Check database schema version and apply new changes if needed
+func alterDB() error {
+	stmt := "PRAGMA user_version"
+	var version int
+	err := db.QueryRow(stmt).Scan(&version)
+	if err != nil {
+		return err
+	}
+
+	if version < 1 {
+		stmt = `CREATE TABLE IF NOT EXISTS series
+		(name text, season_lengths text);`
+		_, err = db.Exec(stmt)
+		if err != nil {
+			return err
+		}
+
+		stmt = `CREATE TABLE IF NOT EXISTS episodes
+		(series text, number int, watched int);`
+		_, err = db.Exec(stmt)
+		if err != nil {
+			return err
+		}
+	}
+
+	if version < 1 { // MAKE SURE YOU UPDATE THIS ON CHANGE
+		stmt := "PRAGMA user_version = 1" // MAKE SURE YOU UPDATE THIS ON CHANGE
+		_, err = db.Exec(stmt)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func readShows() tea.Msg {
