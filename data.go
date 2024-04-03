@@ -56,6 +56,18 @@ func (s Show) save() error {
 	return nil
 }
 
+func (s Show) delete() error {
+	stmt := `UPDATE OR IGNORE series SET deleted = 1 WHERE name = ?`
+	_, err := db.Exec(stmt, s.name)
+	return err
+}
+
+func (s Show) undelete() error {
+	stmt := `UPDATE OR IGNORE series SET deleted = 0 WHERE name = ?`
+	_, err := db.Exec(stmt, s.name)
+	return err
+}
+
 func (s Show) getEpisode() (Episode, error) {
 	for i := 0; i < 50; i++ {
 		n := rand.Intn(s.episodeCount)
@@ -129,7 +141,31 @@ func connectDB() tea.Msg {
 		log.Fatal(err)
 	}
 
+	err = clearDeleted()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return readShows()
+}
+
+func clearDeleted() error {
+	stmt := `DELETE FROM episodes WHERE watched = 0`
+	_, err := db.Exec(stmt)
+	if err != nil {
+		return err
+	}
+
+	// TODO: add foreign keys
+	stmt = `DELETE FROM episodes WHERE series IN (SELECT name FROM series WHERE deleted = 1)`
+	_, err = db.Exec(stmt)
+	if err != nil {
+		return err
+	}
+
+	stmt = `DELETE FROM series WHERE deleted = 1`
+	_, err = db.Exec(stmt)
+	return err
 }
 
 // Check database schema version and apply new changes if needed
@@ -157,8 +193,16 @@ func alterDB() error {
 		}
 	}
 
-	if version < 1 { // MAKE SURE YOU UPDATE THIS ON CHANGE
-		stmt := "PRAGMA user_version = 1" // MAKE SURE YOU UPDATE THIS ON CHANGE
+	if version < 2 {
+		stmt = `ALTER TABLE series add COLUMN deleted int DEFAULT 0`
+		_, err = db.Exec(stmt)
+		if err != nil {
+			return err
+		}
+	}
+
+	if version < 2 { // MAKE SURE YOU UPDATE THIS ON CHANGE
+		stmt := "PRAGMA user_version = 2" // MAKE SURE YOU UPDATE THIS ON CHANGE
 		_, err = db.Exec(stmt)
 		if err != nil {
 			return err

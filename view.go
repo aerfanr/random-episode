@@ -20,18 +20,21 @@ type globalModel struct {
 	shows      []Show
 }
 
+type showChoice struct {
+	name string
+	deleted bool
+}
+
 type menuModel struct {
-	choices []string
+	choices []showChoice
 	cursor  int
 }
 
 func newMenu(s []Show) menuModel {
-	choices := []string{"Add show"}
-	if len(s) == 0 {
-		choices = []string{"Add show ha", "ha ha"}
-	}
+	choices := []showChoice{{name: "Add show"}}
+	
 	for _, show := range s {
-		choices = append(choices, show.name)
+		choices = append(choices, showChoice{name: show.name})
 	}
 
 	cursor := 1
@@ -69,6 +72,22 @@ func (m *menuModel) Update(g *globalModel, msg tea.Msg) tea.Cmd {
 				model := newResultModel(&g.shows[m.cursor-1])
 				g.stageModel = &model
 			}
+		case "d":
+			if m.cursor > 0 {
+				err := g.shows[m.cursor-1].delete()
+				if err != nil {
+					log.Fatal(err)
+				}
+				m.choices[m.cursor].deleted = true
+			}
+		case "u":
+			if m.cursor > 0 {
+				err := g.shows[m.cursor-1].undelete()
+				if err != nil {
+					log.Fatal(err)
+				}
+				m.choices[m.cursor].deleted = false
+			}
 		}
 	}
 
@@ -83,10 +102,14 @@ func (m *menuModel) View() string {
 			cursor = ">"
 		}
 
-		s += fmt.Sprintf("%s %s\n", cursor, choice)
+		if choice.deleted {
+			s += fmt.Sprintf("%s (deleted: %s, press u to undo)\n", cursor, choice.name)
+		} else {
+			s += fmt.Sprintf("%s %s\n", cursor, choice.name)
+		}
 	}
 
-	s += "\n(Press q to quit)"
+	s += "\n(Press q to quit, d to delete)"
 
 	return s
 }
