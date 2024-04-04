@@ -6,8 +6,14 @@ import (
 	"strconv"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+var normalStyle lipgloss.Style
+var focusStyle lipgloss.Style
+var deleteStyle lipgloss.Style
+var inputStyle lipgloss.Style
 
 type stageModel interface {
 	Update(*globalModel, tea.Msg) tea.Cmd
@@ -97,16 +103,26 @@ func (m *menuModel) Update(g *globalModel, msg tea.Msg) tea.Cmd {
 func (m *menuModel) View() string {
 	s := "What do you want to do?\n\n"
 	for i, choice := range m.choices {
+		style := normalStyle
 		cursor := " "
 		if m.cursor == i {
 			cursor = ">"
+			style = focusStyle
 		}
 
 		if choice.deleted {
-			s += fmt.Sprintf("%s (deleted: %s, press u to undo)\n", cursor, choice.name)
+			s += fmt.Sprintf(
+				deleteStyle.Render("%s (deleted: %s, press u to undo)"),
+				cursor, choice.name,
+			)
 		} else {
-			s += fmt.Sprintf("%s %s\n", cursor, choice.name)
+			s += fmt.Sprintf(
+				style.Render("%s %s"),
+				cursor, choice.name,
+			)
 		}
+
+		s += "\n"
 	}
 
 	s += "\n(Press q to quit, d to delete)"
@@ -189,7 +205,7 @@ func (m *addModel) handleShowInput(g *globalModel) tea.Cmd {
 
 func (m *addModel) View() string {
 	s := m.message + "\n\n"
-	return s + m.textInput.View()
+	return s + inputStyle.Render(m.textInput.View())
 }
 
 type resultModel struct {
@@ -242,11 +258,14 @@ func (m *resultModel) View() string {
 	)
 
 	for i, choice := range []string{"Watched", "Later"} {
+		style := normalStyle
 		cursor := " "
 		if m.cursor == i {
+			style = focusStyle
 			cursor = ">"
 		}
-		s += fmt.Sprintf("%s %s\n", cursor, choice)
+		s += fmt.Sprintf(style.Render("%s %s"), cursor, choice)
+		s += "\n"
 	}
 
 	return s
@@ -257,6 +276,11 @@ type showsLoaded struct {
 }
 
 func initialModel() globalModel {
+	normalStyle = lipgloss.NewStyle().Width(24).AlignHorizontal(lipgloss.Center)
+	focusStyle = normalStyle.Copy().Bold(true).Foreground(lipgloss.Color("#CF3476"))
+	deleteStyle = normalStyle.Copy().Italic(true)
+	inputStyle = focusStyle.Copy().AlignHorizontal(lipgloss.Left)
+
 	menu := newMenu([]Show{})
 
 	return globalModel{
